@@ -207,6 +207,7 @@ SrsHlsMuxer::SrsHlsMuxer()
     _sequence_no = 0;
     current = NULL;
     hls_keys = false;
+    hls_ended = false;
     hls_fragments_per_key = 0;
     async = new SrsAsyncCallWorker();
     context = new SrsTsContext();
@@ -246,6 +247,11 @@ void SrsHlsMuxer::dispose()
     srs_trace("gracefully dispose hls %s", req? req->get_stream_url().c_str() : "");
 }
 
+void SrsHlsMuxer::mark_ended()
+{
+    hls_ended = true;
+}
+
 int SrsHlsMuxer::sequence_no()
 {
     return _sequence_no;
@@ -283,7 +289,7 @@ srs_error_t SrsHlsMuxer::initialize()
 }
 
 srs_error_t SrsHlsMuxer::update_config(SrsRequest* r, string entry_prefix,
-    string path, string m3u8_file, string ts_file, double fragment, double window,
+    string path, string type, string m3u8_file, string ts_file, double fragment, double window,
     bool ts_floor, double aof_ratio, bool cleanup, bool wait_keyframe, bool keys,
     int fragments_per_key, string key_file ,string key_file_path, string key_url)
 {
@@ -294,6 +300,7 @@ srs_error_t SrsHlsMuxer::update_config(SrsRequest* r, string entry_prefix,
     
     hls_entry_prefix = entry_prefix;
     hls_path = path;
+    hls_type = type;
     hls_ts_file = ts_file;
     hls_fragment = fragment;
     hls_aof_ratio = aof_ratio;
@@ -738,15 +745,17 @@ srs_error_t SrsHlsMuxer::_refresh_m3u8(string m3u8_file)
     
     // #EXTM3U\n
     // #EXT-X-VERSION:3\n
-    // #EXT-X-ALLOW-CACHE:YES\n
     std::stringstream ss;
     ss << "#EXTM3U" << SRS_CONSTS_LF
-    << "#EXT-X-VERSION:3" << SRS_CONSTS_LF
-    << "#EXT-X-ALLOW-CACHE:YES" << SRS_CONSTS_LF;
+    << "#EXT-X-VERSION:3" << SRS_CONSTS_LF;
     
     // #EXT-X-MEDIA-SEQUENCE:4294967295\n
     SrsHlsSegment* first = dynamic_cast<SrsHlsSegment*>(segments->first());
     ss << "#EXT-X-MEDIA-SEQUENCE:" << first->sequence_no << SRS_CONSTS_LF;
+
+    if (hls_type == "VOD" || hls_type == "EVENT") {
+        ss << "#EXT-X-PLAYLIST-TYPE:" << hls_type << SRS_CONSTS_LF;
+    }
     
     // iterator shared for td generation and segemnts wrote.
     std::vector<SrsHlsSegment*>::iterator it;
@@ -797,7 +806,7 @@ srs_error_t SrsHlsMuxer::_refresh_m3u8(string m3u8_file)
         // "#EXTINF:4294967295.208,\n"
         ss.precision(3);
         ss.setf(std::ios::fixed, std::ios::floatfield);
-        ss << "#EXTINF:" << segment->duration() / 1000.0 << ", no desc" << SRS_CONSTS_LF;
+        ss << "#EXTINF:" << segment->duration() / 1000.0 << SRS_CONSTS_LF;
         
         // {file name}\n
         std::string seg_uri = segment->uri;
@@ -808,6 +817,12 @@ srs_error_t SrsHlsMuxer::_refresh_m3u8(string m3u8_file)
         }
         //ss << segment->uri << SRS_CONSTS_LF;
         ss << seg_uri << SRS_CONSTS_LF;
+    }
+
+    if (hls_ended == true) {
+        // mark playlist as completed
+        ss << "#EXT-X-ENDLIST" << SRS_CONSTS_LF;
+        hls_ended == false;
     }
     
     // write m3u8 to writer.
@@ -880,6 +895,7 @@ srs_error_t SrsHlsController::on_publish(SrsRequest* req)
     std::string entry_prefix = _srs_config->get_hls_entry_prefix(vhost);
     // get the hls path config
     std::string path = _srs_config->get_hls_path(vhost);
+    std::string type = _srs_config->get_hls_type(vhost);
     std::string m3u8_file = _srs_config->get_hls_m3u8_file(vhost);
     std::string ts_file = _srs_config->get_hls_ts_file(vhost);
     bool cleanup = _srs_config->get_hls_cleanup(vhost);
@@ -901,7 +917,7 @@ srs_error_t SrsHlsController::on_publish(SrsRequest* req)
     // for the HLS donot requires the EXT-X-MEDIA-SEQUENCE be monotonically increase.
     
     // open muxer
-    if ((err = muxer->update_config(req, entry_prefix, path, m3u8_file, ts_file, hls_fragment,
+    if ((err = muxer->update_config(req, entry_prefix, path, type, m3u8_file, ts_file, hls_fragment,
         hls_window, ts_floor, hls_aof_ratio, cleanup, wait_keyframe,hls_keys,hls_fragments_per_key,
         hls_key_file, hls_key_file_path, hls_key_url)) != srs_success ) {
         return srs_error_wrap(err, "hls: update config");
@@ -924,6 +940,8 @@ srs_error_t SrsHlsController::on_unpublish()
     if ((err = muxer->flush_audio(tsmc)) != srs_success) {
         return srs_error_wrap(err, "hls: flush audio");
     }
+
+    muxer->mark_ended();
     
     if ((err = muxer->segment_close()) != srs_success) {
         return srs_error_wrap(err, "hls: segment close");

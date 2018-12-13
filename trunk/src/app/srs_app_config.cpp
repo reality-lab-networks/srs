@@ -6050,6 +6050,23 @@ string SrsConfig::get_hls_path(string vhost)
     return conf->arg0();
 }
 
+string SrsConfig::get_hls_type(string vhost)
+{
+    static string DEFAULT = "";
+    
+    SrsConfDirective* conf = get_hls(vhost);
+    if (!conf) {
+        return DEFAULT;
+    }
+    
+    conf = conf->get("hls_type");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return conf->arg0();
+}
+
 string SrsConfig::get_hls_m3u8_file(string vhost)
 {
     static string DEFAULT = "[app]/[stream].m3u8";

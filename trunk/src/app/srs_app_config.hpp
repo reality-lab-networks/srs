@@ -1180,6 +1180,10 @@ public:
      */
     virtual std::string get_hls_path(std::string vhost);
     /**
+     * get the HLS type; live, vod or event
+     */
+    virtual std::string get_hls_type(std::string vhost);
+    /**
      * get the HLS m3u8 file path template.
      */
     virtual std::string get_hls_m3u8_file(std::string vhost);

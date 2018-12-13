@@ -133,9 +133,11 @@ private:
 private:
     std::string hls_entry_prefix;
     std::string hls_path;
+    std::string hls_type;
     std::string hls_ts_file;
     bool hls_cleanup;
     bool hls_wait_keyframe;
+    bool hls_ended;
     std::string m3u8_dir;
     double hls_aof_ratio;
     // TODO: FIXME: Use TBN 1000.
@@ -187,6 +189,7 @@ public:
 public:
     virtual void dispose();
 public:
+    virtual void mark_ended();
     virtual int sequence_no();
     virtual std::string ts_url();
     virtual double duration();
@@ -200,7 +203,7 @@ public:
      * when publish, update the config for muxer.
      */
     virtual srs_error_t update_config(SrsRequest* r, std::string entry_prefix,
-        std::string path, std::string m3u8_file, std::string ts_file,
+        std::string path, std::string type, std::string m3u8_file, std::string ts_file,
         double fragment, double window, bool ts_floor, double aof_ratio,
         bool cleanup, bool wait_keyframe, bool keys, int fragments_per_key,
         std::string key_file, std::string key_file_path, std::string key_url);
